@@ -6,6 +6,7 @@ from config import load_config, save_config, update_cookies_from_raw
 from crawler import run_scan
 from analyzer import generate_report, get_task_guide, export_data
 from database import get_tasks, update_task_status, get_summary, save_task
+from server import start_server
 
 def handle_cookies(args):
     cfg = load_config()
@@ -85,6 +86,9 @@ def handle_import_json(args):
     except Exception as e:
         print(f"[ERROR] Failed to import JSON: {e}")
 
+def handle_server(args):
+    start_server(args.port)
+
 def main():
     parser = argparse.ArgumentParser(description="Sprinter - SEOSprint Autonomous Task Analyzer & Goal Tracker")
     subparsers = parser.add_subparsers(dest="command")
@@ -114,6 +118,9 @@ def main():
     p_import = subparsers.add_parser("import-json", help="Import tasks from browser JSON export")
     p_import.add_argument("file", help="Path to JSON file")
 
+    p_server = subparsers.add_parser("server", help="Start real-time receiver server on port 8080")
+    p_server.add_argument("--port", type=int, default=8080, help="Server port")
+
     args = parser.parse_args()
 
     if args.command == "cookies":
@@ -132,6 +139,8 @@ def main():
         handle_status(args)
     elif args.command == "import-json":
         handle_import_json(args)
+    elif args.command == "server":
+        handle_server(args)
     else:
         parser.print_help()
 
