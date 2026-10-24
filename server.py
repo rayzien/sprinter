@@ -2,7 +2,8 @@ import http.server
 import socketserver
 import os
 import json
-from database import save_task, get_summary
+import urllib.parse
+from database import save_task, get_summary, get_tasks, update_task_status, get_task_by_id
 
 PORT = 8080
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +20,8 @@ class SprinterHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        if self.path == '/api/bulk-shortlist':
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == '/api/bulk-shortlist':
             try:
                 length = int(self.headers.get('Content-Length', 0))
                 body = self.rfile.read(length).decode('utf-8')
@@ -44,9 +46,35 @@ class SprinterHandler(http.server.SimpleHTTPRequestHandler):
                     saved_count += 1
                 
                 summary = get_summary()
-                print(f"[SERVER] Received & saved {saved_count} tasks. Total Shortlist: ${summary['total_shortlisted_value']:.2f} ({summary['goal_percentage']}%)")
+                print(f"[SERVER] Received & saved {saved_count} tasks. Total Shortlist: ${summary['total_shortlisted_value']:.2f}")
 
                 resp = json.dumps({"status": "ok", "saved_count": saved_count, "summary": summary}).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Length', str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+            except Exception as e:
+                err = json.dumps({"status": "error", "message": str(e)}).encode('utf-8')
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Length', str(len(err)))
+                self.end_headers()
+                self.wfile.write(err)
+        elif parsed.path == '/api/complete':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length > 0 else "{}"
+                data = json.loads(body)
+                task_id = data.get("task_id")
+                if task_id:
+                    update_task_status(task_id, 'completed')
+                    summary = get_summary()
+                    resp = json.dumps({"status": "ok", "summary": summary}).encode('utf-8')
+                else:
+                    resp = json.dumps({"status": "error", "message": "Missing task_id"}).encode('utf-8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -66,9 +94,22 @@ class SprinterHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     def do_GET(self):
-        if self.path == '/api/status':
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == '/api/status':
             summary = get_summary()
             resp = json.dumps(summary).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Content-Length', str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
+        elif parsed.path == '/api/tasks':
+            params = urllib.parse.parse_qs(parsed.query)
+            status = params.get('status', ['shortlisted'])[0]
+            limit = int(params.get('limit', [100])[0])
+            tasks = get_tasks(status=status, limit=limit)
+            resp = json.dumps(tasks).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')

@@ -4,7 +4,8 @@ import json
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 DEFAULT_CONFIG = {
-    "base_url": "https://seosprint.net",
+    "base_url": "https://seosprint.run",
+    "task_endpoint": "/earn-task/2",
     "phpsessid": "j8dhaab0fssdltl7gj58518arn",
     "lang": "en",
     "cf_clearance": "",
@@ -51,6 +52,7 @@ def get_headers(cfg=None):
         "Cookie": get_cookie_header(cfg),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
+        "Referer": f"{cfg.get('base_url', 'https://seosprint.run')}/",
         "Sec-Fetch-Site": "same-origin",
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Dest": "document"

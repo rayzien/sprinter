@@ -5,8 +5,9 @@ import json
 from config import load_config, save_config, update_cookies_from_raw
 from crawler import run_scan
 from analyzer import generate_report, get_task_guide, export_data
-from database import get_tasks, update_task_status, get_summary, save_task
+from database import get_tasks, update_task_status, get_summary, save_task, get_account_info
 from server import start_server
+from filter import estimate_time_minutes
 
 def handle_cookies(args):
     cfg = load_config()
@@ -18,6 +19,7 @@ def handle_cookies(args):
     elif args.show:
         print("[CONFIG] Active Session Configuration:")
         print(f"  Base URL      : {cfg.get('base_url')}")
+        print(f"  Task Endpoint : {cfg.get('task_endpoint', '/earn-task/2')}")
         print(f"  PHPSESSID     : {cfg.get('phpsessid', 'none')}")
         print(f"  Language      : {cfg.get('lang', 'en')}")
         print(f"  Target Goal   : ${cfg.get('target_goal_usd', 100.0):.2f}")
@@ -31,21 +33,29 @@ def handle_scan(args):
     run_scan(max_pages=pages, target_goal=goal)
 
 def handle_list(args):
-    tasks = get_tasks('shortlisted', args.limit)
+    tasks = get_tasks('shortlisted', args.limit, sort_by='time')
     if not tasks:
-        print("[INFO] Shortlist is currently empty. Run 'python3 main.py scan' to populate.")
+        print("[INFO] Shortlist is currently empty. Run 'python3 main.py scan' or run Kiwi Browser HUD scanner.")
         return
-    print(f"\n{'ID':<8} {'PAYOUT':<10} {'SCORE':<7} {'CATEGORY':<14} {'TITLE'}")
-    print("-" * 75)
-    for t in tasks:
-        title = t['title'][:35] + "..." if len(t['title']) > 35 else t['title']
-        print(f"{t['task_id']:<8} +${t['price_usd']:<9.3f} {t['score']:<7} {t['category']:<14} {title}")
+    print(f"\n{'#':<3} {'ID':<8} {'EST.TIME':<10} {'PAYOUT':<10} {'SCORE':<7} {'CATEGORY':<14} {'TITLE'}")
+    print("-" * 80)
+    for i, t in enumerate(tasks, 1):
+        est = f"~{t.get('est_minutes', 2.5):.1f}m"
+        title = t['title'][:32] + "..." if len(t['title']) > 32 else t['title']
+        print(f"{i:<3} {t['task_id']:<8} {est:<10} +${t['price_usd']:<9.3f} {t['score']:<7} {t['category']:<14} {title}")
     summary = get_summary()
-    print("-" * 75)
+    print("-" * 80)
     print(f"Total: {summary['total_shortlisted_tasks']} tasks | Total Value: ${summary['total_shortlisted_value']:.2f} ({summary['goal_percentage']}% of ${summary['target_goal']:.2f})")
 
 def handle_guide(args):
-    print(get_task_guide(args.task_id))
+    tid = args.task_id
+    if tid == "1" or tid == "top":
+        tasks = get_tasks('shortlisted', 1, sort_by='time')
+        if not tasks:
+            print("[INFO] No tasks found. Populate list first.")
+            return
+        tid = tasks[0]['task_id']
+    print(get_task_guide(tid))
 
 def handle_complete(args):
     update_task_status(args.task_id, 'completed')
@@ -70,15 +80,18 @@ def handle_import_json(args):
             tid = item.get("taskId") or item.get("task_id") or item.get("id")
             if not tid:
                 continue
+            title = item.get("title", "")
+            est = float(item.get("est_minutes") or estimate_time_minutes(title, ""))
             save_task({
                 "task_id": tid,
-                "title": item.get("title", ""),
-                "url": item.get("url", f"https://seosprint.net/taskread/{tid}"),
+                "title": title,
+                "url": item.get("url", f"https://seosprint.run/taskread/{tid}"),
                 "price_usd": float(item.get("priceUSD", item.get("price_usd", 0.0))),
-                "category": item.get("category", "Registration"),
+                "category": item.get("category", "Email Signup"),
                 "emp_name": item.get("empName", item.get("emp_name", "")),
                 "page_found": item.get("page", 1),
-                "score": int(item.get("score", 75))
+                "score": int(item.get("score", 75)),
+                "est_minutes": est
             })
             count += 1
         print(f"[IMPORT] Successfully imported {count} tasks into Sprinter database.")
@@ -101,11 +114,11 @@ def main():
     p_scan.add_argument("--goal", type=float, default=None, help="Target goal in USD (e.g. 100.0)")
     p_scan.add_argument("--pages", type=int, default=None, help="Maximum pages to scan (e.g. 50)")
 
-    p_list = subparsers.add_parser("list", help="List shortlisted tasks")
+    p_list = subparsers.add_parser("list", help="List shortlisted tasks sorted by lowest time")
     p_list.add_argument("--limit", type=int, default=25, help="Number of tasks to display")
 
-    p_guide = subparsers.add_parser("guide", help="Get execution guide for a task")
-    p_guide.add_argument("task_id", help="Task ID")
+    p_guide = subparsers.add_parser("guide", help="Get execution guide for a task (use '1' for top task)")
+    p_guide.add_argument("task_id", help="Task ID or '1'")
 
     p_complete = subparsers.add_parser("complete", help="Mark a task as completed")
     p_complete.add_argument("task_id", help="Task ID")
